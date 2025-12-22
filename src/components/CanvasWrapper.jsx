@@ -1,6 +1,8 @@
 import React, { useRef, useEffect } from "react";
 import { GameLoop } from "../engine/core/GameLoop";
 import { Electrostatics } from "../engine/simulations/lab/Electrostatics";
+import { WaveFDTD } from "../engine/simulations/lab/WaveFDTD";
+import { PolarityGame } from "../engine/simulations/arcade/PolarityGame";
 
 export default function CanvasWrapper({ simulationType, onInit }) {
   const canvasRef = useRef(null);
@@ -11,12 +13,21 @@ export default function CanvasWrapper({ simulationType, onInit }) {
     const ctx = canvas.getContext("2d");
 
     // 1. Initialize the correct simulation based on props
-    // (For now, we default to Electrostatics)
-    simulationRef.current = new Electrostatics(
-      canvas.width,
-      canvas.height,
-      canvas
-    );
+    if (simulationType === "electrostatics") {
+      simulationRef.current = new Electrostatics(
+        canvas.width,
+        canvas.height,
+        canvas
+      );
+    } else if (simulationType === "waves") {
+      simulationRef.current = new WaveFDTD(canvas.width, canvas.height, canvas);
+    } else if (simulationType === "arcade") {
+      simulationRef.current = new PolarityGame(
+        canvas.width,
+        canvas.height,
+        canvas
+      );
+    }
 
     if (onInit) {
       onInit(simulationRef.current);
@@ -27,8 +38,11 @@ export default function CanvasWrapper({ simulationType, onInit }) {
       (dt) => simulationRef.current.update(dt),
       () => {
         // Clear screen with a fade effect for trails
-        ctx.fillStyle = "rgba(10, 10, 15, 0.2)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Only do fade for electrostatics, Waves draws full screen image
+        if (simulationType === "electrostatics") {
+          ctx.fillStyle = "rgba(10, 10, 15, 0.2)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
 
         simulationRef.current.draw(ctx);
       }
@@ -58,6 +72,10 @@ export default function CanvasWrapper({ simulationType, onInit }) {
   }, [simulationType]); // Re-run if simulationType changes
 
   return (
-    <canvas ref={canvasRef} className="block w-full h-full bg-slate-900" />
+    <canvas
+      ref={canvasRef}
+      className="block w-full h-full bg-slate-900"
+      onContextMenu={(e) => e.preventDefault()}
+    />
   );
 }

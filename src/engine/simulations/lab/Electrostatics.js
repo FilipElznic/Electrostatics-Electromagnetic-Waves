@@ -34,7 +34,7 @@ export class Electrostatics extends SimulationBase {
     this.onSelectionChange = null; // Callback for React
 
     // Setup Input Listeners
-    this.input.on("mousedown", (pos) => this.handleMouseDown(pos));
+    this.input.on("mousedown", (e) => this.handleMouseDown(e.pos));
     this.input.on("mouseup", () => this.handleMouseUp());
     this.input.on("mousemove", (pos) => this.handleMouseMove(pos));
   }

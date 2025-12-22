@@ -10,6 +10,7 @@ export class Input {
       mousedown: [],
       mouseup: [],
       mousemove: [],
+      keydown: [],
     };
 
     this.setupListeners();
@@ -25,16 +26,21 @@ export class Input {
 
     this.canvas.addEventListener("mousedown", (e) => {
       this.isMouseDown = true;
-      this.emit("mousedown", this.mousePos);
+      this.emit("mousedown", { pos: this.mousePos, button: e.button });
     });
 
     this.canvas.addEventListener("mouseup", (e) => {
       this.isMouseDown = false;
-      this.emit("mouseup", this.mousePos);
+      this.emit("mouseup", { pos: this.mousePos, button: e.button });
+    });
+
+    this.canvas.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
     });
 
     window.addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
+      this.emit("keydown", e.code);
     });
 
     window.addEventListener("keyup", (e) => {
