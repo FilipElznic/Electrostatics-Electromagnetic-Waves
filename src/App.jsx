@@ -10,16 +10,21 @@ function App() {
 
   // Electrostatics State
   const [selectedCharge, setSelectedCharge] = useState(null);
+  const [visMode, setVisMode] = useState("lines"); // 'vectors' | 'lines'
+  const [isElectrostaticsPlaying, setIsElectrostaticsPlaying] = useState(false);
 
   // Waves State
   const [frequency, setFrequency] = useState(0.2);
   const [signalStrength, setSignalStrength] = useState(0);
+  const [placedMirrors, setPlacedMirrors] = useState([]);
 
   const handleSimulationInit = useCallback(
     (sim) => {
       setSimulationInstance(sim);
 
       if (sim.constructor.name === "Electrostatics") {
+        sim.setVisualizationMode(visMode); // Set initial mode
+        sim.setPlaying(isElectrostaticsPlaying); // Set initial play state
         sim.onSelectionChange = (charge) => {
           setSelectedCharge(charge ? { ...charge } : null);
         };
@@ -28,10 +33,19 @@ function App() {
         sim.onSignalUpdate = (strength) => {
           setSignalStrength(strength);
         };
+        // Sync mirrors
+        sim.setMirrors(placedMirrors);
+        sim.onMirrorPlaced = (mirror) => {
+          setPlacedMirrors((prev) => {
+            const newMirrors = [...prev, mirror];
+            sim.setMirrors(newMirrors); // Sync back immediately
+            return newMirrors;
+          });
+        };
       }
       // Arcade mode doesn't need specific state bindings yet
     },
-    [frequency]
+    [frequency, visMode, isElectrostaticsPlaying, placedMirrors]
   );
 
   // Handle Mode Switching
@@ -40,6 +54,11 @@ function App() {
     setSimulationInstance(null);
     setSelectedCharge(null);
     setSignalStrength(0);
+    setIsElectrostaticsPlaying(false); // Reset play state on mode switch
+    // Note: We keep placedMirrors state so it persists if we switch back?
+    // Or reset? The prompt implies a level reset button.
+    // Let's reset mirrors on mode switch to be safe or keep them.
+    // For now, let's keep them unless explicitly reset.
   };
 
   // Electrostatics Handlers
@@ -50,11 +69,51 @@ function App() {
     }
   };
 
+  const handleVisModeChange = (newVisMode) => {
+    setVisMode(newVisMode);
+    if (simulationInstance && mode === "electrostatics") {
+      simulationInstance.setVisualizationMode(newVisMode);
+    }
+  };
+
+  const handlePlayPause = () => {
+    const newState = !isElectrostaticsPlaying;
+    setIsElectrostaticsPlaying(newState);
+    if (simulationInstance && mode === "electrostatics") {
+      simulationInstance.setPlaying(newState);
+    }
+  };
+
+  const handleResetPositions = () => {
+    setIsElectrostaticsPlaying(false);
+    if (simulationInstance && mode === "electrostatics") {
+      simulationInstance.resetPositions();
+    }
+  };
+
+  const handleAddCharge = (q) => {
+    if (simulationInstance && mode === "electrostatics") {
+      simulationInstance.addCharge(q);
+    }
+  };
+
   // Wave Handlers
   const handleFrequencyChange = (newFreq) => {
     setFrequency(newFreq);
     if (simulationInstance && mode === "waves") {
       simulationInstance.setFrequency(newFreq);
+    }
+  };
+
+  const handleMaterialChange = (materialType) => {
+    if (simulationInstance && mode === "waves") {
+      simulationInstance.setMaterial(materialType);
+    }
+  };
+
+  const handleRotate = () => {
+    if (simulationInstance && mode === "waves") {
+      simulationInstance.rotateBrush();
     }
   };
 
@@ -123,6 +182,12 @@ function App() {
         <ElectrostaticsOverlay
           charge={selectedCharge}
           onChargeChange={handleChargeChange}
+          visMode={visMode}
+          onVisModeChange={handleVisModeChange}
+          isPlaying={isElectrostaticsPlaying}
+          onPlayPause={handlePlayPause}
+          onReset={handleResetPositions}
+          onAddCharge={handleAddCharge}
         />
       )}
 
@@ -131,7 +196,15 @@ function App() {
           frequency={frequency}
           onFrequencyChange={handleFrequencyChange}
           signalStrength={signalStrength}
-          onReset={() => simulationInstance && simulationInstance.resetWalls()}
+          onReset={() => {
+            setPlacedMirrors([]);
+            if (simulationInstance) {
+              simulationInstance.setMirrors([]);
+              simulationInstance.resetWalls();
+            }
+          }}
+          onMaterialChange={handleMaterialChange}
+          onRotate={handleRotate}
         />
       )}
 
