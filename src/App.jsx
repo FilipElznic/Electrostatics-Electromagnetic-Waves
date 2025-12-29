@@ -3,9 +3,10 @@ import CanvasWrapper from "./components/CanvasWrapper";
 import ElectrostaticsOverlay from "./components/UI/ElectrostaticsOverlay";
 import WaveOverlay from "./components/UI/WaveOverlay";
 import ArcadeOverlay from "./components/UI/ArcadeOverlay";
+import InspectorPanel from "./components/UI/InspectorPanel";
 
 function App() {
-  const [mode, setMode] = useState("electrostatics"); // 'electrostatics' | 'waves' | 'arcade'
+  const [mode, setMode] = useState("electrostatics"); // 'electrostatics' | 'waves' | 'arcade' | 'editor'
   const [simulationInstance, setSimulationInstance] = useState(null);
 
   // Electrostatics State
@@ -55,23 +56,38 @@ function App() {
     setSelectedCharge(null);
     setSignalStrength(0);
     setIsElectrostaticsPlaying(false); // Reset play state on mode switch
-    // Note: We keep placedMirrors state so it persists if we switch back?
-    // Or reset? The prompt implies a level reset button.
-    // Let's reset mirrors on mode switch to be safe or keep them.
-    // For now, let's keep them unless explicitly reset.
   };
 
   // Electrostatics Handlers
   const handleChargeChange = (newQ) => {
-    if (simulationInstance && mode === "electrostatics") {
-      simulationInstance.updateSelectedCharge(newQ);
-      setSelectedCharge((prev) => (prev ? { ...prev, q: newQ } : null));
+    if (
+      simulationInstance &&
+      (mode === "electrostatics" || mode === "editor")
+    ) {
+      if (selectedCharge) {
+        simulationInstance.updateChargeProperties(selectedCharge.id, {
+          q: newQ,
+        });
+        setSelectedCharge((prev) => (prev ? { ...prev, q: newQ } : null));
+      }
+    }
+  };
+
+  const handleChargeUpdate = (id, props) => {
+    if (simulationInstance) {
+      simulationInstance.updateChargeProperties(id, props);
+      if (selectedCharge && selectedCharge.id === id) {
+        setSelectedCharge((prev) => ({ ...prev, ...props }));
+      }
     }
   };
 
   const handleVisModeChange = (newVisMode) => {
     setVisMode(newVisMode);
-    if (simulationInstance && mode === "electrostatics") {
+    if (
+      simulationInstance &&
+      (mode === "electrostatics" || mode === "editor")
+    ) {
       simulationInstance.setVisualizationMode(newVisMode);
     }
   };
@@ -79,21 +95,48 @@ function App() {
   const handlePlayPause = () => {
     const newState = !isElectrostaticsPlaying;
     setIsElectrostaticsPlaying(newState);
-    if (simulationInstance && mode === "electrostatics") {
+    if (
+      simulationInstance &&
+      (mode === "electrostatics" || mode === "editor")
+    ) {
       simulationInstance.setPlaying(newState);
     }
   };
 
   const handleResetPositions = () => {
     setIsElectrostaticsPlaying(false);
-    if (simulationInstance && mode === "electrostatics") {
+    if (
+      simulationInstance &&
+      (mode === "electrostatics" || mode === "editor")
+    ) {
       simulationInstance.resetPositions();
     }
   };
 
   const handleAddCharge = (q) => {
-    if (simulationInstance && mode === "electrostatics") {
+    if (
+      simulationInstance &&
+      (mode === "electrostatics" || mode === "editor")
+    ) {
       simulationInstance.addCharge(q);
+    }
+  };
+
+  const handleScenarioChange = (scenario) => {
+    if (
+      simulationInstance &&
+      (mode === "electrostatics" || mode === "editor")
+    ) {
+      simulationInstance.loadScenario(scenario);
+    }
+  };
+
+  const handleSpawnAtom = () => {
+    if (
+      simulationInstance &&
+      (mode === "electrostatics" || mode === "editor")
+    ) {
+      simulationInstance.spawnAtom();
     }
   };
 
@@ -121,6 +164,8 @@ function App() {
     switch (mode) {
       case "electrostatics":
         return "Electrostatics Lab";
+      case "editor":
+        return "Particle Editor";
       case "waves":
         return "EM Waves (FDTD)";
       case "arcade":
@@ -155,6 +200,16 @@ function App() {
             Electrostatics
           </button>
           <button
+            onClick={() => switchMode("editor")}
+            className={`px-4 py-2 rounded text-sm font-bold transition-colors cursor-pointer ${
+              mode === "editor"
+                ? "bg-orange-600 text-white"
+                : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+            }`}
+          >
+            Editor
+          </button>
+          <button
             onClick={() => switchMode("waves")}
             className={`px-4 py-2 rounded text-sm font-bold transition-colors cursor-pointer ${
               mode === "waves"
@@ -178,7 +233,7 @@ function App() {
       </div>
 
       {/* Overlays */}
-      {mode === "electrostatics" && (
+      {(mode === "electrostatics" || mode === "editor") && (
         <ElectrostaticsOverlay
           charge={selectedCharge}
           onChargeChange={handleChargeChange}
@@ -188,6 +243,15 @@ function App() {
           onPlayPause={handlePlayPause}
           onReset={handleResetPositions}
           onAddCharge={handleAddCharge}
+          onScenarioChange={handleScenarioChange}
+          onSpawnAtom={handleSpawnAtom}
+        />
+      )}
+
+      {mode === "editor" && (
+        <InspectorPanel
+          selectedCharge={selectedCharge}
+          onUpdate={handleChargeUpdate}
         />
       )}
 
@@ -201,6 +265,13 @@ function App() {
             if (simulationInstance) {
               simulationInstance.setMirrors([]);
               simulationInstance.resetWalls();
+            }
+          }}
+          onNextLevel={() => {
+            setPlacedMirrors([]);
+            if (simulationInstance) {
+              simulationInstance.setMirrors([]);
+              simulationInstance.regenerateLevel();
             }
           }}
           onMaterialChange={handleMaterialChange}

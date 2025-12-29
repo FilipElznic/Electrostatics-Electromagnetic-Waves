@@ -9,9 +9,11 @@ export default function ElectrostaticsOverlay({
   onPlayPause,
   onReset,
   onAddCharge,
+  onScenarioChange,
+  onSpawnAtom,
 }) {
   return (
-    <div className="absolute top-16 right-4 bg-slate-800/90 p-4 rounded-lg border border-slate-700 text-white w-64 backdrop-blur-sm pointer-events-auto">
+    <div className="absolute top-16 right-4 bg-slate-800/90 p-4 rounded-lg border border-slate-700 text-white w-64 backdrop-blur-sm pointer-events-auto max-h-[80vh] overflow-y-auto">
       {/* Simulation Controls */}
       <div className="mb-6 border-b border-slate-700 pb-4">
         <h3 className="font-bold mb-2 text-lg">Simulation</h3>
@@ -47,6 +49,32 @@ export default function ElectrostaticsOverlay({
             - Charge
           </button>
         </div>
+      </div>
+
+      {/* Tools */}
+      <div className="mb-6 border-b border-slate-700 pb-4">
+        <h3 className="font-bold mb-2 text-lg">Spawn Tools</h3>
+        <button
+          onClick={onSpawnAtom}
+          className="w-full py-2 px-2 rounded text-sm font-bold bg-purple-600 hover:bg-purple-500 text-white transition-colors flex items-center justify-center gap-2"
+        >
+          <span>⚛️</span> Spawn Atom
+        </button>
+      </div>
+
+      {/* Scenarios */}
+      <div className="mb-6 border-b border-slate-700 pb-4">
+        <h3 className="font-bold mb-2 text-lg">Scenarios</h3>
+        <select
+          onChange={(e) => onScenarioChange(e.target.value)}
+          className="w-full bg-slate-700 text-white text-sm rounded p-2 border border-slate-600 focus:border-blue-500 outline-none cursor-pointer"
+        >
+          <option value="default">Default (3+ 2-)</option>
+          <option value="dipole">Dipole</option>
+          <option value="quadrupole">Quadrupole</option>
+          <option value="line">Line</option>
+          <option value="random">Random Cloud</option>
+        </select>
       </div>
 
       {/* Global Settings */}

@@ -10,34 +10,17 @@ export class Electrostatics extends SimulationBase {
 
     // Physics constants
     this.k = 20000; // Visual scaling constant
-    this.physicsK = 500000; // Force constant for movement
+    this.physicsK = 2000; // Force constant for movement (Reduced to prevent clamping saturation)
     this.isPlaying = false;
     this.initialPositions = [];
 
     // State
-    this.charges = [
-      {
-        pos: new Vector2(width / 2 - 100, height / 2),
-        vel: new Vector2(0, 0),
-        q: 50,
-        color: "#ef4444",
-        radius: 20,
-        isDragging: false,
-      }, // Positive (Red)
-      {
-        pos: new Vector2(width / 2 + 100, height / 2),
-        vel: new Vector2(0, 0),
-        q: -50,
-        color: "#3b82f6",
-        radius: 20,
-        isDragging: false,
-      }, // Negative (Blue)
-    ];
+    this.charges = [];
 
-    // Save initial positions for reset
-    this.saveInitialPositions();
+    // Initialize Default Scenario
+    this.loadScenario("default");
 
-    this.selectedChargeIndex = -1;
+    this.selectedChargeId = null;
     this.dragOffset = new Vector2(0, 0);
     this.onSelectionChange = null; // Callback for React
     this.visualizationMode = "lines"; // 'vectors' | 'lines'
@@ -48,27 +31,75 @@ export class Electrostatics extends SimulationBase {
     this.input.on("mousemove", (pos) => this.handleMouseMove(pos));
   }
 
+  loadScenario(type) {
+    this.charges = [];
+    const w = this.width;
+    const h = this.height;
+    const cx = w / 2;
+    const cy = h / 2;
+
+    if (type === "default") {
+      // 3 Positive, 2 Negative
+      this.addCharge(50, cx - 150, cy - 50);
+      this.addCharge(50, cx, cy - 100);
+      this.addCharge(50, cx + 150, cy - 50);
+      this.addCharge(-50, cx - 75, cy + 50);
+      this.addCharge(-50, cx + 75, cy + 50);
+    } else if (type === "dipole") {
+      this.addCharge(50, cx - 100, cy);
+      this.addCharge(-50, cx + 100, cy);
+    } else if (type === "quadrupole") {
+      this.addCharge(50, cx - 50, cy - 50);
+      this.addCharge(-50, cx + 50, cy - 50);
+      this.addCharge(50, cx + 50, cy + 50);
+      this.addCharge(-50, cx - 50, cy + 50);
+    } else if (type === "random") {
+      for (let i = 0; i < 10; i++) {
+        const q = Math.random() > 0.5 ? 50 : -50;
+        const x = Math.random() * (w - 100) + 50;
+        const y = Math.random() * (h - 100) + 50;
+        this.addCharge(q, x, y);
+      }
+    } else if (type === "line") {
+      for (let i = 0; i < 5; i++) {
+        this.addCharge(50, cx - 200 + i * 100, cy);
+      }
+    }
+
+    this.saveInitialPositions();
+  }
+
+  resize(w, h) {
+    this.width = w;
+    this.height = h;
+    // Clamp charges to new screen size
+    this.charges.forEach((c) => {
+      c.pos.x = Math.max(c.radius, Math.min(w - c.radius, c.pos.x));
+      c.pos.y = Math.max(c.radius, Math.min(h - c.radius, c.pos.y));
+    });
+  }
+
   handleMouseDown(mousePos) {
-    let clickedIndex = -1;
+    let clickedId = null;
     // Check collision with charges
     for (let i = 0; i < this.charges.length; i++) {
       const charge = this.charges[i];
       if (mousePos.dist(charge.pos) < charge.radius) {
         charge.isDragging = true;
-        clickedIndex = i;
+        clickedId = charge.id;
         this.dragOffset = charge.pos.sub(mousePos);
         break;
       }
     }
 
-    if (clickedIndex !== this.selectedChargeIndex) {
-      this.selectedChargeIndex = clickedIndex;
+    if (clickedId !== this.selectedChargeId) {
+      this.selectedChargeId = clickedId;
       if (this.onSelectionChange) {
         this.onSelectionChange(this.getSelectedCharge());
       }
-    } else if (clickedIndex === -1 && this.selectedChargeIndex !== -1) {
+    } else if (clickedId === null && this.selectedChargeId !== null) {
       // Deselect if clicked empty space
-      this.selectedChargeIndex = -1;
+      this.selectedChargeId = null;
       if (this.onSelectionChange) {
         this.onSelectionChange(null);
       }
@@ -89,6 +120,10 @@ export class Electrostatics extends SimulationBase {
         // Boundary checks
         c.pos.x = Math.max(c.radius, Math.min(this.width - c.radius, c.pos.x));
         c.pos.y = Math.max(c.radius, Math.min(this.height - c.radius, c.pos.y));
+
+        // Clear history when dragging
+        c.history = [];
+
         needsUpdate = true;
       }
     });
@@ -101,7 +136,7 @@ export class Electrostatics extends SimulationBase {
     // 1. Calculate Forces
     for (let i = 0; i < this.charges.length; i++) {
       const c1 = this.charges[i];
-      if (c1.isDragging) continue;
+      if (c1.isDragging || c1.isFixed) continue;
 
       let force = new Vector2(0, 0);
 
@@ -116,15 +151,10 @@ export class Electrostatics extends SimulationBase {
         // Avoid singularity and extreme forces
         if (dist > c1.radius + c2.radius) {
           // F = k * q1 * q2 / r^2
-          // Direction: Repel if same sign, Attract if different
-          // rVec points from c2 to c1.
-          // If q1*q2 > 0 (same), force is along rVec (repel).
-          // If q1*q2 < 0 (diff), force is opposite rVec (attract).
-
           const forceMag = (this.physicsK * c1.q * c2.q) / distSq;
 
-          // Clamp force
-          const maxForce = 5000;
+          // Clamp force to prevent extreme acceleration at contact, but allow range
+          const maxForce = 10000;
           const clampedForce = Math.min(
             Math.max(forceMag, -maxForce),
             maxForce
@@ -135,19 +165,25 @@ export class Electrostatics extends SimulationBase {
       }
 
       // 2. Update Velocity
-      // F = ma, assume m=1
-      c1.vel = c1.vel.add(force.mult(dt));
+      // F = ma => a = F/m
+      c1.vel = c1.vel.add(force.div(c1.mass).mult(dt));
     }
 
     // 3. Update Positions & Collisions
     this.charges.forEach((c) => {
-      if (c.isDragging) return;
+      if (c.isDragging || c.isFixed) return;
 
       // Damping (Friction)
       c.vel = c.vel.mult(0.95);
 
       // Update Position
       c.pos = c.pos.add(c.vel.mult(dt));
+
+      // Update History
+      c.history.push({ x: c.pos.x, y: c.pos.y });
+      if (c.history.length > 200) {
+        c.history.shift();
+      }
 
       // Screen Boundaries (Bounce)
       if (c.pos.x < c.radius) {
@@ -184,21 +220,29 @@ export class Electrostatics extends SimulationBase {
 
           // Move apart
           const move = dir.mult(overlap * 0.5);
-          if (!c1.isDragging) c1.pos = c1.pos.add(move);
-          if (!c2.isDragging) c2.pos = c2.pos.sub(move);
+          if (!c1.isDragging && !c1.isFixed) c1.pos = c1.pos.add(move);
+          if (!c2.isDragging && !c2.isFixed) c2.pos = c2.pos.sub(move);
 
           // Bounce velocities
-          // Simple elastic collision approximation
           const vRel = c1.vel.sub(c2.vel);
           const velAlongNormal = vRel.x * dir.x + vRel.y * dir.y;
 
           if (velAlongNormal < 0) {
             const restitution = 0.8;
             const jImpulse = -(1 + restitution) * velAlongNormal;
-            // Assume equal mass
-            const impulse = dir.mult(jImpulse * 0.5);
-            if (!c1.isDragging) c1.vel = c1.vel.add(impulse);
-            if (!c2.isDragging) c2.vel = c2.vel.sub(impulse);
+
+            const invM1 = c1.isFixed ? 0 : 1 / c1.mass;
+            const invM2 = c2.isFixed ? 0 : 1 / c2.mass;
+
+            if (invM1 + invM2 > 0) {
+              const impulseMag = jImpulse / (invM1 + invM2);
+              const impulse = dir.mult(impulseMag);
+
+              if (!c1.isDragging && !c1.isFixed)
+                c1.vel = c1.vel.add(impulse.mult(invM1));
+              if (!c2.isDragging && !c2.isFixed)
+                c2.vel = c2.vel.sub(impulse.mult(invM2));
+            }
           }
         }
       }
@@ -211,21 +255,30 @@ export class Electrostatics extends SimulationBase {
       q: c.q,
     }));
   }
-  addCharge(q) {
-    // Add new charge at a random position near center
-    const offset = new Vector2(
-      Math.random() * 100 - 50,
-      Math.random() * 100 - 50
-    );
-    const pos = new Vector2(this.width / 2, this.height / 2).add(offset);
+  addCharge(q, x, y) {
+    // Add new charge at a random position near center if x,y not provided
+    let pos;
+    if (x !== undefined && y !== undefined) {
+      pos = new Vector2(x, y);
+    } else {
+      const offset = new Vector2(
+        Math.random() * 100 - 50,
+        Math.random() * 100 - 50
+      );
+      pos = new Vector2(this.width / 2, this.height / 2).add(offset);
+    }
 
     const newCharge = {
+      id: Date.now() + Math.random(),
       pos: pos,
       vel: new Vector2(0, 0),
       q: q,
+      mass: 1,
+      isFixed: false,
       color: q > 0 ? "#ef4444" : "#3b82f6",
       radius: 20,
       isDragging: false,
+      history: [],
     };
 
     this.charges.push(newCharge);
@@ -235,6 +288,54 @@ export class Electrostatics extends SimulationBase {
       this.saveInitialPositions();
     }
   }
+
+  spawnAtom() {
+    const cx = this.width / 2;
+    const cy = this.height / 2;
+    const r = 150;
+
+    // Proton (Heavy, Fixed)
+    const proton = {
+      id: Date.now() + Math.random(),
+      pos: new Vector2(cx, cy),
+      vel: new Vector2(0, 0),
+      q: 50,
+      mass: 100,
+      isFixed: true,
+      color: "#ef4444",
+      radius: 25,
+      isDragging: false,
+      history: [],
+    };
+    this.charges.push(proton);
+
+    // Electron (Light, Orbiting)
+    const q1 = proton.q;
+    const q2 = -10;
+    const m = 1;
+
+    // v = sqrt(k * |q1 * q2| / (m * r))
+    const vMag = Math.sqrt((this.physicsK * Math.abs(q1 * q2)) / (m * r));
+
+    const electron = {
+      id: Date.now() + Math.random() + 1,
+      pos: new Vector2(cx + r, cy),
+      vel: new Vector2(0, vMag), // Perpendicular velocity
+      q: q2,
+      mass: m,
+      isFixed: false,
+      color: "#3b82f6",
+      radius: 10,
+      isDragging: false,
+      history: [],
+    };
+    this.charges.push(electron);
+
+    if (!this.isPlaying) {
+      this.saveInitialPositions();
+    }
+  }
+
   setPlaying(playing) {
     this.isPlaying = playing;
   }
@@ -245,6 +346,7 @@ export class Electrostatics extends SimulationBase {
       if (this.initialPositions[i]) {
         c.pos = this.initialPositions[i].pos.clone();
         c.vel = new Vector2(0, 0);
+        c.history = [];
       }
     });
   }
@@ -256,8 +358,26 @@ export class Electrostatics extends SimulationBase {
       this.drawVectorField(ctx);
     }
 
+    // Draw Trails
+    this.charges.forEach((c) => {
+      if (c.history.length < 2) return;
+
+      for (let i = 0; i < c.history.length - 1; i++) {
+        const p1 = c.history[i];
+        const p2 = c.history[i + 1];
+        const alpha = i / c.history.length; // 0 to 1
+
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.5})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    });
+
     // 2. Draw Charges
-    this.charges.forEach((c, index) => {
+    this.charges.forEach((c) => {
       ctx.beginPath();
       ctx.arc(c.pos.x, c.pos.y, c.radius, 0, Math.PI * 2);
       ctx.fillStyle = c.color;
@@ -269,7 +389,7 @@ export class Electrostatics extends SimulationBase {
       ctx.shadowBlur = 0;
 
       // Selection ring
-      if (index === this.selectedChargeIndex) {
+      if (c.id === this.selectedChargeId) {
         ctx.strokeStyle = "white";
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -417,20 +537,34 @@ export class Electrostatics extends SimulationBase {
     this.visualizationMode = mode;
   }
 
-  updateSelectedCharge(newQ) {
-    if (this.selectedChargeIndex !== -1) {
-      const charge = this.charges[this.selectedChargeIndex];
-      charge.q = newQ;
-      // Update color based on polarity
-      charge.color = newQ > 0 ? "#ef4444" : newQ < 0 ? "#3b82f6" : "#9ca3af";
+  updateChargeProperties(id, props) {
+    const charge = this.charges.find((c) => c.id === id);
+    if (charge) {
+      if (props.q !== undefined) {
+        charge.q = props.q;
+        charge.color =
+          charge.q > 0 ? "#ef4444" : charge.q < 0 ? "#3b82f6" : "#9ca3af";
+      }
+      if (props.mass !== undefined) charge.mass = props.mass;
+      if (props.radius !== undefined) charge.radius = props.radius;
+      if (props.isFixed !== undefined) charge.isFixed = props.isFixed;
+
+      if (props.velX !== undefined) charge.vel.x = props.velX;
+      if (props.velY !== undefined) charge.vel.y = props.velY;
+
+      if (props.posX !== undefined) {
+        charge.pos.x = props.posX;
+        charge.history = []; // Clear history on teleport
+      }
+      if (props.posY !== undefined) {
+        charge.pos.y = props.posY;
+        charge.history = []; // Clear history on teleport
+      }
     }
   }
 
   getSelectedCharge() {
-    if (this.selectedChargeIndex !== -1) {
-      return this.charges[this.selectedChargeIndex];
-    }
-    return null;
+    return this.charges.find((c) => c.id === this.selectedChargeId) || null;
   }
 
   destroy() {

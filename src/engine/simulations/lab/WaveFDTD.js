@@ -2,70 +2,79 @@ import { SimulationBase } from "../SimulationBase";
 import { Input } from "../../core/Input";
 import { Vector2 } from "../../core/Vector2";
 
+// Helper for line intersection
+function getLineIntersection(p0, p1, p2, p3) {
+  const s1_x = p1.x - p0.x;
+  const s1_y = p1.y - p0.y;
+  const s2_x = p3.x - p2.x;
+  const s2_y = p3.y - p2.y;
+
+  const s =
+    (-s1_y * (p0.x - p2.x) + s1_x * (p0.y - p2.y)) /
+    (-s2_x * s1_y + s1_x * s2_y);
+  const t =
+    (s2_x * (p0.y - p2.y) - s2_y * (p0.x - p2.x)) /
+    (-s2_x * s1_y + s1_x * s2_y);
+
+  if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+    return {
+      x: p0.x + t * s1_x,
+      y: p0.y + t * s1_y,
+      t: t,
+    };
+  }
+  return null;
+}
+
 export class WaveFDTD extends SimulationBase {
   constructor(width, height, canvas) {
     super(width, height);
     this.canvas = canvas;
     this.input = new Input(canvas);
 
-    // Simulation Resolution (Downscale for performance)
-    this.scale = 4;
+    // Simulation Resolution
+    this.scale = 2;
     this.cols = Math.ceil(width / this.scale);
     this.rows = Math.ceil(height / this.scale);
 
-    // Physics Constants
-    // Courant number S = c * dt / dx <= 1/sqrt(2) for 2D
-    // Let c = 0.5 (simulation units), dx = 1
-    // dt <= dx / (c * sqrt(2)) ~= 1 / (0.5 * 1.414) ~= 1.414
-    // We choose conservative values
-    this.c = 0.5;
-    this.dx = 1;
-    this.dt = 0.1; // Time step (Slowed down)
+    // Laser State
+    this.laserPath = [];
+    this.maxBounces = 20;
+    this.maxDistance = 2000;
 
-    // Source
-    this.frequency = 0.3; // Higher frequency for "Laser" look
-    this.time = 0;
-    this.sourcePos = {
-      x: Math.floor(this.cols / 2),
-      y: Math.floor(this.rows / 2),
-    };
-
-    // Target (Receiver)
-    this.targetPos = {
-      x: Math.floor(this.cols * 0.8),
-      y: Math.floor(this.rows * 0.5),
-    };
+    // Source & Target
+    this.sourcePos = { x: 50, y: 50 }; // Will be set by maze
+    this.targetPos = { x: 100, y: 100 };
+    this.targetRadius = 15;
     this.signalStrength = 0;
     this.onSignalUpdate = null;
 
-    // Arrays (Float32 for performance)
-    const size = this.cols * this.rows;
-    this.Ez = new Float32Array(size);
-    this.Hx = new Float32Array(size);
-    this.Hy = new Float32Array(size);
+    // Grid for Walls (Maze)
+    // 0 = Air, 1 = Metal (Not used for mirrors anymore), 2 = Wall/Absorber
+    this.walls = new Uint8Array(this.cols * this.rows);
 
-    // Material Grid (0 = Air, 1 = Metal/Wall)
-    this.walls = new Uint8Array(size);
-
-    // Mirror Objects
+    // Mirrors (Vector Objects)
     this.mirrors = [];
     this.onMirrorPlaced = null;
+
+    // Input State
+    this.isDrawing = false;
+    this.drawAngle = 0; // 0, 45, 90, 135
+
+    // Optimization: Only update laser when needed
+    this.needsUpdate = true;
 
     // Initialize Maze Level
     this.generateMaze();
 
     // Rendering
     this.offscreenCanvas = document.createElement("canvas");
-    this.offscreenCanvas.width = this.cols;
-    this.offscreenCanvas.height = this.rows;
+    this.offscreenCanvas.width = this.width; // Use full resolution for crisp walls
+    this.offscreenCanvas.height = this.height;
     this.offscreenCtx = this.offscreenCanvas.getContext("2d");
-    this.imageData = this.offscreenCtx.createImageData(this.cols, this.rows);
 
-    // Input State
-    this.isDrawing = false;
-    this.drawMode = 0; // 0 = None, 1 = Paint, 2 = Erase
-    this.currentMaterial = 1; // 1 = Metal, 2 = Absorber
-    this.drawAngle = 0; // 0, 45, 90, 135
+    // Render static world once
+    this.renderStaticWorld();
 
     // Setup Listeners
     this.input.on("mousedown", (e) => this.handleMouseDown(e));
@@ -83,32 +92,27 @@ export class WaveFDTD extends SimulationBase {
   }
 
   resize(w, h) {
-    // Re-initializing on resize is destructive but simplest for grid
     this.width = w;
     this.height = h;
     this.cols = Math.ceil(w / this.scale);
     this.rows = Math.ceil(h / this.scale);
+    this.walls = new Uint8Array(this.cols * this.rows);
 
-    const size = this.cols * this.rows;
-    this.Ez = new Float32Array(size);
-    this.Hx = new Float32Array(size);
-    this.Hy = new Float32Array(size);
-    this.walls = new Uint8Array(size);
-
-    this.offscreenCanvas.width = this.cols;
-    this.offscreenCanvas.height = this.rows;
-    this.imageData = this.offscreenCtx.createImageData(this.cols, this.rows);
+    this.offscreenCanvas.width = w;
+    this.offscreenCanvas.height = h;
 
     this.generateMaze();
+    this.renderStaticWorld();
+    this.needsUpdate = true;
   }
 
   setMirrors(mirrors) {
     this.mirrors = mirrors;
+    this.needsUpdate = true;
   }
 
   handleMouseDown(e) {
     this.isDrawing = true;
-    // Left click (0) = Place Mirror, Right click (2) = Erase (Not implemented yet)
     if (e.button === 0) {
       this.placeMirror(e.pos);
     }
@@ -119,19 +123,21 @@ export class WaveFDTD extends SimulationBase {
   }
 
   handleMouseMove(e) {
-    // No drag painting for mirrors
+    // No drag painting
   }
 
   setMaterial(type) {
-    this.currentMaterial = type;
+    // Not used in raycasting mode
   }
 
   placeMirror(pos) {
-    // Convert screen pos to grid pos
     const gx = Math.floor(pos.x / this.scale);
     const gy = Math.floor(pos.y / this.scale);
 
     if (gx >= 0 && gx < this.cols && gy >= 0 && gy < this.rows) {
+      // Check if placing on wall
+      if (this.walls[gx + gy * this.cols] === 2) return;
+
       const newMirror = {
         id: Date.now(),
         x: gx,
@@ -146,145 +152,112 @@ export class WaveFDTD extends SimulationBase {
     }
   }
 
-  // Removed paintBrush and paint logic as we use objects now
-
-  drawLine(x0, y0, x1, y1, mat) {
-    // Bresenham's Line Algorithm
-    let dx = Math.abs(x1 - x0);
-    let dy = Math.abs(y1 - y0);
-    let sx = x0 < x1 ? 1 : -1;
-    let sy = y0 < y1 ? 1 : -1;
-    let err = dx - dy;
-
-    while (true) {
-      this.drawThickPoint(x0, y0, mat);
-
-      if (x0 === x1 && y0 === y1) break;
-      let e2 = 2 * err;
-      if (e2 > -dy) {
-        err -= dy;
-        x0 += sx;
-      }
-      if (e2 < dx) {
-        err += dx;
-        y0 += sy;
-      }
-    }
+  resetWalls() {
+    // Only clear user-placed mirrors (handled by App.jsx via setMirrors([]))
+    this.signalStrength = 0;
+    this.needsUpdate = true;
   }
 
-  drawThickPoint(gx, gy, mat) {
-    const brushSize = 1; // 3x3 block for thicker walls
-    for (let dy = -brushSize; dy <= brushSize; dy++) {
-      for (let dx = -brushSize; dx <= brushSize; dx++) {
-        const nx = gx + dx;
-        const ny = gy + dy;
-        if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows) {
-          const nIdx = nx + ny * this.cols;
-          // Constraint: Cannot overwrite Absorber (2)
-          if (this.walls[nIdx] !== 2) {
-            this.walls[nIdx] = mat;
-            if (mat === 1) {
-              this.Ez[nIdx] = 0;
-              this.Hx[nIdx] = 0;
-              this.Hy[nIdx] = 0;
-            }
-          }
+  regenerateLevel() {
+    this.generateMaze();
+    this.renderStaticWorld();
+    this.signalStrength = 0;
+    this.needsUpdate = true;
+  }
+
+  renderStaticWorld() {
+    // Draw static walls to offscreen canvas
+    const ctx = this.offscreenCtx;
+    ctx.fillStyle = "#111";
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    ctx.fillStyle = "#444";
+    for (let y = 0; y < this.rows; y++) {
+      for (let x = 0; x < this.cols; x++) {
+        if (this.walls[x + y * this.cols] === 2) {
+          ctx.fillRect(x * this.scale, y * this.scale, this.scale, this.scale);
         }
       }
     }
   }
 
   update() {
-    const steps = 1;
+    if (!this.needsUpdate) return;
 
-    // 0. Rasterize Mirrors
-    // Clear Metal (1) cells first
-    for (let i = 0; i < this.walls.length; i++) {
-      if (this.walls[i] === 1) {
-        this.walls[i] = 0;
-      }
-    }
+    this.calculateLaser();
+    this.needsUpdate = false;
+  }
 
-    // Draw all placed mirrors
-    for (const mirror of this.mirrors) {
-      const angleRad = (mirror.angle * Math.PI) / 180;
-      const dx = Math.cos(angleRad) * (mirror.length / 2);
-      const dy = Math.sin(angleRad) * (mirror.length / 2);
+  calculateLaser() {
+    // 1. Clear previous path
+    this.laserPath = [];
 
-      const x0 = Math.round(mirror.x - dx);
-      const y0 = Math.round(mirror.y - dy);
-      const x1 = Math.round(mirror.x + dx);
-      const y1 = Math.round(mirror.y + dy);
+    // 2. Calculate Ray
+    // Start slightly offset from source to avoid self-collision if source was a mirror
+    let rayOrigin = {
+      x: this.sourcePos.x * this.scale,
+      y: this.sourcePos.y * this.scale,
+    };
+    let rayDir = { x: 1, y: 0 }; // Initial direction (Right)
 
-      this.drawLine(x0, y0, x1, y1, 1); // 1 = Metal
-    }
+    // Add start point
+    this.laserPath.push({ ...rayOrigin });
 
-    for (let s = 0; s < steps; s++) {
-      this.time += this.dt;
+    let hitTarget = false;
 
-      // 1. Update Magnetic Fields (Hx, Hy)
-      // Hx(i, j) depends on Ez(i, j) - Ez(i, j+1)
-      // Hy(i, j) depends on Ez(i+1, j) - Ez(i, j)
-      for (let y = 0; y < this.rows - 1; y++) {
-        for (let x = 0; x < this.cols - 1; x++) {
-          const idx = x + y * this.cols;
+    for (let b = 0; b < this.maxBounces; b++) {
+      // Find closest hit
+      let hit = this.castRay(rayOrigin, rayDir);
 
-          // Standard FDTD update
-          // Hx += - (dt/dx) * (Ez(y+1) - Ez(y))
-          // Hy +=   (dt/dx) * (Ez(x+1) - Ez(x))
+      if (hit) {
+        this.laserPath.push(hit.point);
 
-          // Simple absorbing boundary (do nothing at edges or handle implicitly)
-
-          const ez_curr = this.Ez[idx];
-          const ez_right = this.Ez[idx + 1];
-          const ez_down = this.Ez[idx + this.cols];
-
-          this.Hx[idx] -= 0.5 * (ez_down - ez_curr);
-          this.Hy[idx] += 0.5 * (ez_right - ez_curr);
+        // Check if this segment hits target
+        if (this.checkTargetHit(rayOrigin, hit.point)) {
+          hitTarget = true;
         }
-      }
 
-      // 2. Update Electric Field (Ez)
-      // Ez(i, j) depends on Hy(i, j) - Hy(i-1, j) - (Hx(i, j) - Hx(i, j-1))
-      for (let y = 1; y < this.rows - 1; y++) {
-        for (let x = 1; x < this.cols - 1; x++) {
-          const idx = x + y * this.cols;
-          const mat = this.walls[idx];
+        if (hit.type === "mirror") {
+          // Reflect: R = D - 2(D.N)N
+          const dot = rayDir.x * hit.normal.x + rayDir.y * hit.normal.y;
+          rayDir = {
+            x: rayDir.x - 2 * dot * hit.normal.x,
+            y: rayDir.y - 2 * dot * hit.normal.y,
+          };
 
-          if (mat === 1) {
-            // Metal: Perfect reflection
-            this.Ez[idx] = 0;
-            continue;
-          }
+          // Normalize (just in case)
+          const len = Math.sqrt(rayDir.x * rayDir.x + rayDir.y * rayDir.y);
+          rayDir.x /= len;
+          rayDir.y /= len;
 
-          const hx_curr = this.Hx[idx];
-          const hx_up = this.Hx[idx - this.cols];
-          const hy_curr = this.Hy[idx];
-          const hy_left = this.Hy[idx - 1];
-
-          this.Ez[idx] += 0.5 * (hy_curr - hy_left - (hx_curr - hx_up));
-
-          if (mat === 2) {
-            // Absorber: Damping
-            this.Ez[idx] *= 0.9;
-          }
+          rayOrigin = hit.point;
+          // Nudge slightly
+          rayOrigin.x += rayDir.x * 0.1;
+          rayOrigin.y += rayDir.y * 0.1;
+        } else {
+          // Wall - Stop
+          break;
         }
-      }
-
-      // 3. Source
-      const sourceIdx = this.sourcePos.x + this.sourcePos.y * this.cols;
-      this.Ez[sourceIdx] += Math.sin(this.time * this.frequency);
-
-      // 4. Target Detection
-      const targetIdx = this.targetPos.x + this.targetPos.y * this.cols;
-      const signal = Math.abs(this.Ez[targetIdx]);
-
-      // Smooth accumulation
-      if (signal > 0.1) {
-        this.signalStrength = Math.min(100, this.signalStrength + 0.5);
       } else {
-        this.signalStrength = Math.max(0, this.signalStrength - 0.2);
+        // No hit - extend to max dist
+        const endPoint = {
+          x: rayOrigin.x + rayDir.x * this.maxDistance,
+          y: rayOrigin.y + rayDir.y * this.maxDistance,
+        };
+        this.laserPath.push(endPoint);
+
+        if (this.checkTargetHit(rayOrigin, endPoint)) {
+          hitTarget = true;
+        }
+        break;
       }
+    }
+
+    // Update Signal
+    if (hitTarget) {
+      this.signalStrength = 100;
+    } else {
+      this.signalStrength = 0;
     }
 
     if (this.onSignalUpdate) {
@@ -292,52 +265,201 @@ export class WaveFDTD extends SimulationBase {
     }
   }
 
-  draw(ctx) {
-    const data = this.imageData.data;
-    const size = this.cols * this.rows;
+  checkTargetHit(p1, p2) {
+    // Distance from point to line segment
+    const tx = this.targetPos.x * this.scale;
+    const ty = this.targetPos.y * this.scale;
 
-    for (let i = 0; i < size; i++) {
-      const val = this.Ez[i];
-      const mat = this.walls[i];
-      const pixelIdx = i * 4;
+    const l2 = (p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2;
+    if (l2 === 0) return false;
 
-      if (mat === 1) {
-        // Metal: Silver/White
-        data[pixelIdx] = 200; // R
-        data[pixelIdx + 1] = 200; // G
-        data[pixelIdx + 2] = 200; // B
-        data[pixelIdx + 3] = 255; // A
-      } else if (mat === 2) {
-        // Absorber: Dark Grey
-        data[pixelIdx] = 50; // R
-        data[pixelIdx + 1] = 50; // G
-        data[pixelIdx + 2] = 50; // B
-        data[pixelIdx + 3] = 255; // A
-      } else {
-        // Heatmap: Green Laser Look
-        // Map intensity to Green channel
-        const intensity = Math.min(Math.abs(val) * 1200, 255);
+    let t = ((tx - p1.x) * (p2.x - p1.x) + (ty - p1.y) * (p2.y - p1.y)) / l2;
+    t = Math.max(0, Math.min(1, t));
 
-        data[pixelIdx] = 0; // R
-        data[pixelIdx + 1] = intensity; // G (Bright Green)
-        data[pixelIdx + 2] = intensity * 0.2; // B (Slight tint)
-        data[pixelIdx + 3] = 255; // Alpha
+    const px = p1.x + t * (p2.x - p1.x);
+    const py = p1.y + t * (p2.y - p1.y);
+
+    const dist = Math.sqrt((tx - px) ** 2 + (ty - py) ** 2);
+    return dist < this.targetRadius;
+  }
+
+  castRay(origin, dir) {
+    let closestHit = null;
+    let minDist = Infinity;
+
+    // 1. Check Mirrors (Line Segments)
+    for (const m of this.mirrors) {
+      const angleRad = (m.angle * Math.PI) / 180;
+      const dx = Math.cos(angleRad) * (m.length / 2) * this.scale; // Scale length
+      const dy = Math.sin(angleRad) * (m.length / 2) * this.scale;
+
+      const mx = m.x * this.scale;
+      const my = m.y * this.scale;
+
+      const p1 = { x: mx - dx, y: my - dy };
+      const p2 = { x: mx + dx, y: my + dy };
+
+      // Normal vector (-dy, dx) normalized
+      let nx = -dy;
+      let ny = dx;
+      const len = Math.sqrt(nx * nx + ny * ny);
+      nx /= len;
+      ny /= len;
+
+      // Ray is infinite line for intersection check, but we limit t
+      // p3 = origin + dir * maxDist
+      const p3 = { x: origin.x + dir.x * 2000, y: origin.y + dir.y * 2000 };
+
+      const hit = getLineIntersection(p1, p2, origin, p3);
+      if (hit) {
+        // Calculate distance
+        const d = Math.sqrt((hit.x - origin.x) ** 2 + (hit.y - origin.y) ** 2);
+        if (d < minDist && d > 0.1) {
+          // Avoid self-intersection
+          minDist = d;
+          closestHit = {
+            point: { x: hit.x, y: hit.y },
+            normal: { x: nx, y: ny },
+            type: "mirror",
+          };
+        }
       }
     }
 
-    // Put data to offscreen canvas
-    this.offscreenCtx.putImageData(this.imageData, 0, 0);
+    // 2. Check Walls (Grid DDA)
+    // Simplified Ray Marching for Grid
+    let rayUnitStepSize = {
+      x: Math.sqrt(1 + (dir.y / dir.x) ** 2),
+      y: Math.sqrt(1 + (dir.x / dir.y) ** 2),
+    };
+    let mapCheck = {
+      x: Math.floor(origin.x / this.scale),
+      y: Math.floor(origin.y / this.scale),
+    };
+    let rayLength1D = { x: 0, y: 0 };
+    let step = { x: 0, y: 0 };
 
-    // Draw scaled up to main canvas
-    ctx.imageSmoothingEnabled = false; // Keep pixels sharp
-    ctx.drawImage(this.offscreenCanvas, 0, 0, this.width, this.height);
+    if (dir.x < 0) {
+      step.x = -1;
+      rayLength1D.x = (origin.x / this.scale - mapCheck.x) * rayUnitStepSize.x;
+    } else {
+      step.x = 1;
+      rayLength1D.x =
+        (mapCheck.x + 1 - origin.x / this.scale) * rayUnitStepSize.x;
+    }
 
-    // Draw Target
+    if (dir.y < 0) {
+      step.y = -1;
+      rayLength1D.y = (origin.y / this.scale - mapCheck.y) * rayUnitStepSize.y;
+    } else {
+      step.y = 1;
+      rayLength1D.y =
+        (mapCheck.y + 1 - origin.y / this.scale) * rayUnitStepSize.y;
+    }
+
+    let bTileFound = false;
+    let dist = 0;
+
+    // Only march as far as the closest mirror hit
+    const maxGridDist = minDist === Infinity ? 2000 : minDist / this.scale;
+
+    while (!bTileFound && dist < maxGridDist) {
+      if (rayLength1D.x < rayLength1D.y) {
+        mapCheck.x += step.x;
+        dist = rayLength1D.x;
+        rayLength1D.x += rayUnitStepSize.x;
+      } else {
+        mapCheck.y += step.y;
+        dist = rayLength1D.y;
+        rayLength1D.y += rayUnitStepSize.y;
+      }
+
+      if (
+        mapCheck.x >= 0 &&
+        mapCheck.x < this.cols &&
+        mapCheck.y >= 0 &&
+        mapCheck.y < this.rows
+      ) {
+        if (this.walls[mapCheck.x + mapCheck.y * this.cols] === 2) {
+          bTileFound = true;
+        }
+      } else {
+        // Out of bounds is a wall
+        bTileFound = true;
+      }
+    }
+
+    if (bTileFound) {
+      // Calculate exact hit point
+      const hitX = origin.x + dir.x * dist * this.scale;
+      const hitY = origin.y + dir.y * dist * this.scale;
+
+      // If wall hit is closer than mirror hit (which we limited loop by), return wall
+      // Actually we already limited the loop, so if we found a tile, it IS closer
+      return {
+        point: { x: hitX, y: hitY },
+        normal: { x: 0, y: 0 }, // Normal doesn't matter for absorption
+        type: "wall",
+      };
+    }
+
+    return closestHit;
+  }
+
+  draw(ctx) {
+    // 1. Draw Static World (Walls & Background)
+    ctx.drawImage(this.offscreenCanvas, 0, 0);
+
+    // 3. Draw Mirrors
+    ctx.strokeStyle = "#AAF";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    for (const m of this.mirrors) {
+      const angleRad = (m.angle * Math.PI) / 180;
+      const dx = Math.cos(angleRad) * (m.length / 2) * this.scale;
+      const dy = Math.sin(angleRad) * (m.length / 2) * this.scale;
+
+      const mx = m.x * this.scale;
+      const my = m.y * this.scale;
+
+      ctx.beginPath();
+      ctx.moveTo(mx - dx, my - dy);
+      ctx.lineTo(mx + dx, my + dy);
+      ctx.stroke();
+    }
+
+    // 4. Draw Laser Path
+    if (this.laserPath.length > 1) {
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = "#0F0";
+      ctx.strokeStyle = "#0F0";
+      ctx.lineWidth = 2;
+      ctx.lineJoin = "round";
+
+      ctx.beginPath();
+      ctx.moveTo(this.laserPath[0].x, this.laserPath[0].y);
+      for (let i = 1; i < this.laserPath.length; i++) {
+        ctx.lineTo(this.laserPath[i].x, this.laserPath[i].y);
+      }
+      ctx.stroke();
+
+      ctx.shadowBlur = 0;
+    }
+
+    // 5. Draw Source
+    const sx = this.sourcePos.x * this.scale;
+    const sy = this.sourcePos.y * this.scale;
+    ctx.fillStyle = "#0F0";
+    ctx.beginPath();
+    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 6. Draw Target
     const tx = this.targetPos.x * this.scale;
     const ty = this.targetPos.y * this.scale;
 
     ctx.beginPath();
-    ctx.arc(tx, ty, 10, 0, Math.PI * 2);
+    ctx.arc(tx, ty, this.targetRadius, 0, Math.PI * 2);
     // Glow based on signal
     const glow = this.signalStrength / 100;
     ctx.fillStyle = `rgba(0, 255, 0, ${0.2 + glow * 0.8})`;
@@ -350,7 +472,7 @@ export class WaveFDTD extends SimulationBase {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Draw Ghost Line (Preview)
+    // 7. Draw Ghost Mirror (Preview)
     const mousePos = this.input.getMousePos();
     if (mousePos.x > 0 && mousePos.y > 0) {
       const length = 15 * this.scale; // Fixed size 15
@@ -361,14 +483,14 @@ export class WaveFDTD extends SimulationBase {
       ctx.beginPath();
       ctx.moveTo(mousePos.x - dx, mousePos.y - dy);
       ctx.lineTo(mousePos.x + dx, mousePos.y + dy);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.lineWidth = 4;
       ctx.setLineDash([5, 5]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    // Draw UI hints
+    // 8. Draw UI hints
     ctx.fillStyle = "white";
     ctx.font = "14px monospace";
     ctx.fillText(
@@ -379,20 +501,11 @@ export class WaveFDTD extends SimulationBase {
   }
 
   setFrequency(f) {
-    this.frequency = f;
+    // Not used in raycasting
   }
 
   resetWalls() {
-    // Only clear user-placed Metal (1), keep Maze (2)
-    for (let i = 0; i < this.walls.length; i++) {
-      if (this.walls[i] === 1) {
-        this.walls[i] = 0;
-      }
-    }
-    // Also clear fields to prevent artifacts
-    this.Ez.fill(0);
-    this.Hx.fill(0);
-    this.Hy.fill(0);
+    // Only clear user-placed mirrors (handled by App.jsx via setMirrors([]))
     this.signalStrength = 0;
   }
 
@@ -401,8 +514,9 @@ export class WaveFDTD extends SimulationBase {
     this.walls.fill(0);
 
     // Define Play Area (Centered Box)
-    const marginX = Math.floor(this.cols * 0.2);
-    const marginY = Math.floor(this.rows * 0.2);
+    // Smaller area: 25% margin on each side
+    const marginX = Math.floor(this.cols * 0.25);
+    const marginY = Math.floor(this.rows * 0.25);
     const playW = this.cols - 2 * marginX;
     const playH = this.rows - 2 * marginY;
 
@@ -427,49 +541,63 @@ export class WaveFDTD extends SimulationBase {
     };
 
     // Clear areas around Source and Target
-    this.drawRect(marginX + 2, marginY + 2, 20, 20, 0);
+    this.drawRect(marginX + 2, marginY + 2, 40, 40, 0);
     this.drawRect(
-      this.cols - marginX - 22,
-      this.rows - marginY - 22,
-      20,
-      20,
+      this.cols - marginX - 42,
+      this.rows - marginY - 42,
+      40,
+      40,
       0
     );
   }
 
   recursiveDivision(x, y, w, h) {
-    // Stop if the area is too small (Increased threshold for simpler maze)
-    if (w < 40 || h < 40) return;
+    // Stop if the area is too small (Larger threshold = Easier/Simpler maze)
+    if (w < 100 || h < 100) return;
 
     // Decide split direction
     let splitHorizontal = Math.random() > 0.5;
     if (w > h * 1.5) splitHorizontal = false;
     else if (h > w * 1.5) splitHorizontal = true;
 
+    const wallThickness = 5; // Thicker walls
+
     if (splitHorizontal) {
       // Horizontal Wall
-      const wallY = Math.floor(y + 10 + Math.random() * (h - 20));
-      this.drawRect(x, wallY, w, 2, 2); // Thickness 2
+      const wallY = Math.floor(y + 20 + Math.random() * (h - 40));
+      this.drawRect(x, wallY, w, wallThickness, 2);
 
-      // Create a Gap
-      const gapX = Math.floor(x + Math.random() * (w - 15));
-      this.drawRect(gapX, wallY, 15, 2, 0); // Clear gap (Air)
+      // Create a Gap (Larger gap = Easier)
+      const gapSize = 30;
+      const gapX = Math.floor(x + Math.random() * (w - gapSize));
+      this.drawRect(gapX, wallY, gapSize, wallThickness, 0); // Clear gap (Air)
 
       // Recurse
       this.recursiveDivision(x, y, w, wallY - y);
-      this.recursiveDivision(x, wallY + 2, w, y + h - wallY - 2);
+      this.recursiveDivision(
+        x,
+        wallY + wallThickness,
+        w,
+        y + h - wallY - wallThickness
+      );
     } else {
       // Vertical Wall
-      const wallX = Math.floor(x + 10 + Math.random() * (w - 20));
-      this.drawRect(wallX, y, 2, h, 2); // Thickness 2
+      const wallX = Math.floor(x + 20 + Math.random() * (w - 40));
+      this.drawRect(wallX, y, wallThickness, h, 2);
 
       // Create a Gap
-      const gapY = Math.floor(y + Math.random() * (h - 15));
-      this.drawRect(wallX, gapY, 2, 15, 0); // Clear gap (Air)
+      const gapSize = 30;
+      const gapY = Math.floor(y + Math.random() * (h - gapSize));
+      this.drawRect(wallX, gapY, wallThickness, gapSize, 0); // Clear gap (Air)
 
       // Recurse
       this.recursiveDivision(x, y, wallX - x, h);
-      this.recursiveDivision(wallX + 2, y, x + w - wallX - 2, h);
+      this.recursiveDivision(
+        wallX + wallThickness,
+        y,
+        x + w - wallX - wallThickness,
+        h
+      );
     }
   }
 

@@ -12,8 +12,12 @@ export default function CanvasWrapper({ simulationType, onInit }) {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
+    // 0. Set initial size immediately so simulation gets correct dimensions
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
     // 1. Initialize the correct simulation based on props
-    if (simulationType === "electrostatics") {
+    if (simulationType === "electrostatics" || simulationType === "editor") {
       simulationRef.current = new Electrostatics(
         canvas.width,
         canvas.height,
@@ -39,7 +43,10 @@ export default function CanvasWrapper({ simulationType, onInit }) {
       () => {
         // Clear screen with a fade effect for trails
         // Only do fade for electrostatics, Waves draws full screen image
-        if (simulationType === "electrostatics") {
+        if (
+          simulationType === "electrostatics" ||
+          simulationType === "editor"
+        ) {
           ctx.fillStyle = "rgba(10, 10, 15, 0.2)";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
@@ -59,7 +66,7 @@ export default function CanvasWrapper({ simulationType, onInit }) {
       }
     };
     window.addEventListener("resize", handleResize);
-    handleResize(); // Trigger once
+    // handleResize(); // Already sized at start
 
     // Cleanup
     return () => {

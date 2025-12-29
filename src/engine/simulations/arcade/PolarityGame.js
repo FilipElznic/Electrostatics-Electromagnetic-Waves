@@ -22,12 +22,24 @@ export class PolarityGame extends SimulationBase {
     this.stuckToMagnet = null;
     this.jumpCooldown = 0;
 
+    // Visuals
+    this.particles = [];
+    this.pulseTime = 0;
+
     // Level Setup
     this.reset();
 
     // Input
     this.input.on("keydown", (code) => {
       if (code === "Space") {
+        if (this.player.grounded) {
+          this.player.vel.y = -600; // Jump force
+          this.player.grounded = false;
+        } else if (this.stuckToMagnet) {
+          this.magnetJump();
+        }
+      }
+      if (code === "ShiftLeft" || code === "ShiftRight") {
         this.togglePolarity();
       }
       if (code === "KeyR") {
@@ -59,6 +71,8 @@ export class PolarityGame extends SimulationBase {
     this.message = "";
     this.stuckToMagnet = null;
     this.jumpCooldown = 0;
+    this.particles = [];
+    this.pulseTime = 0;
 
     // Player
     this.player = {
@@ -165,8 +179,12 @@ export class PolarityGame extends SimulationBase {
       // F = k * q1 * q2 / r^2
       const forceMag = (this.k * this.player.q * mag.q) / clampedDistSq;
 
+      // Force Clamping
+      const maxForce = 4000;
+      const clampedForceMag = Math.min(Math.max(forceMag, -maxForce), maxForce);
+
       // Apply force
-      const forceVec = rVec.normalize().mult(forceMag);
+      const forceVec = rVec.normalize().mult(clampedForceMag);
       this.player.acc = this.player.acc.add(forceVec);
     });
 
@@ -176,6 +194,11 @@ export class PolarityGame extends SimulationBase {
 
       // Damping (Air Resistance)
       this.player.vel = this.player.vel.mult(0.98);
+
+      // Ground Friction
+      if (this.player.grounded) {
+        this.player.vel.x *= 0.85;
+      }
 
       // Terminal Velocity Cap
       const maxSpeed = 1000;
@@ -200,11 +223,11 @@ export class PolarityGame extends SimulationBase {
       this.player.pos.x = this.width - this.player.radius;
       this.player.vel.x *= -0.5;
     }
-    if (this.player.pos.y > this.height - this.player.radius) {
-      this.player.pos.y = this.height - this.player.radius;
-      this.player.vel.y = 0;
-      this.player.grounded = true;
+    // Death / Reset if falling off bottom
+    if (this.player.pos.y > this.height + 100) {
+      this.reset();
     }
+    // Ceiling collision
     if (this.player.pos.y < this.player.radius) {
       this.player.pos.y = this.player.radius;
       this.player.vel.y *= -0.5;
@@ -239,14 +262,37 @@ export class PolarityGame extends SimulationBase {
     });
 
     // 6. Win Condition
-    if (
-      this.player.pos.x > this.goal.x &&
-      this.player.pos.x < this.goal.x + this.goal.w &&
-      this.player.pos.y > this.goal.y &&
-      this.player.pos.y < this.goal.y + this.goal.h
-    ) {
-      this.state = "won";
-      this.message = "LEVEL COMPLETE!";
+    if (this.state === "playing") {
+      this.pulseTime += dt;
+
+      if (
+        this.player.pos.x > this.goal.x &&
+        this.player.pos.x < this.goal.x + this.goal.w &&
+        this.player.pos.y > this.goal.y &&
+        this.player.pos.y < this.goal.y + this.goal.h
+      ) {
+        this.state = "won";
+        this.message = "LEVEL COMPLETE!";
+        // Spawn particles
+        for (let i = 0; i < 50; i++) {
+          this.particles.push({
+            pos: this.player.pos.clone(),
+            vel: new Vector2(
+              (Math.random() - 0.5) * 500,
+              (Math.random() - 0.5) * 500
+            ),
+            life: 1.0,
+            color: `hsl(${Math.random() * 360}, 100%, 50%)`,
+          });
+        }
+      }
+    } else if (this.state === "won") {
+      // Update particles
+      this.particles.forEach((p) => {
+        p.pos = p.pos.add(p.vel.mult(dt));
+        p.life -= dt;
+      });
+      this.particles = this.particles.filter((p) => p.life > 0);
     }
   }
 
@@ -266,7 +312,8 @@ export class PolarityGame extends SimulationBase {
     });
 
     // Goal
-    ctx.fillStyle = "rgba(255, 215, 0, 0.3)";
+    const pulseOpacity = 0.3 + 0.2 * Math.sin(this.pulseTime * 5);
+    ctx.fillStyle = `rgba(255, 215, 0, ${pulseOpacity})`;
     ctx.fillRect(this.goal.x, this.goal.y, this.goal.w, this.goal.h);
     ctx.strokeStyle = "gold";
     ctx.lineWidth = 2;
@@ -274,6 +321,14 @@ export class PolarityGame extends SimulationBase {
     ctx.fillStyle = "gold";
     ctx.font = "16px sans-serif";
     ctx.fillText("GOAL", this.goal.x + 25, this.goal.y + 35);
+
+    // Particles
+    this.particles.forEach((p) => {
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = p.life;
+      ctx.fillRect(p.pos.x, p.pos.y, 8, 8);
+      ctx.globalAlpha = 1.0;
+    });
 
     // Magnets
     this.magnets.forEach((m) => {
@@ -300,21 +355,11 @@ export class PolarityGame extends SimulationBase {
     // Player
     const pColor = this.player.q > 0 ? "#ef4444" : "#3b82f6";
 
-    // Draw "Stuck" Outline
-    if (this.stuckToMagnet) {
-      ctx.beginPath();
-      ctx.arc(
-        this.player.pos.x,
-        this.player.pos.y,
-        this.player.radius + 3,
-        0,
-        Math.PI * 2
-      );
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 3;
-      ctx.stroke();
-    }
+    // Glow Effect
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "white";
 
+    // Main Body
     ctx.beginPath();
     ctx.arc(
       this.player.pos.x,
@@ -324,9 +369,13 @@ export class PolarityGame extends SimulationBase {
       Math.PI * 2
     );
     ctx.fillStyle = pColor;
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = pColor;
     ctx.fill();
+
+    // White Border
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "white";
+    ctx.stroke();
+
     ctx.shadowBlur = 0;
 
     // Player Face
@@ -336,26 +385,32 @@ export class PolarityGame extends SimulationBase {
     ctx.arc(this.player.pos.x + 5, this.player.pos.y - 2, 3, 0, Math.PI * 2); // Right Eye
     ctx.fill();
 
-    // Force Vectors (Visualization)
+    // Force Tether Lines
     this.magnets.forEach((mag) => {
-      const rVec = this.player.pos.sub(mag.pos);
-      const distSq = rVec.magSq();
-      const dist = Math.sqrt(distSq);
+      const dist = this.player.pos.dist(mag.pos);
+      const cutoff = 400;
 
-      if (dist < 300) {
-        // Only draw relevant forces
-        const forceMag = (this.k * this.player.q * mag.q) / distSq;
-        const forceVec = rVec.normalize().mult(forceMag * 0.00004); // Scale for visual
+      if (dist < cutoff) {
+        const isAttracting = this.player.q * mag.q < 0;
+        const thickness = Math.max(1, 6 * (1 - dist / cutoff));
 
         ctx.beginPath();
         ctx.moveTo(this.player.pos.x, this.player.pos.y);
-        ctx.lineTo(
-          this.player.pos.x + forceVec.x,
-          this.player.pos.y + forceVec.y
-        );
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.lineWidth = 1;
+        ctx.lineTo(mag.pos.x, mag.pos.y);
+
+        ctx.lineWidth = thickness;
+        if (isAttracting) {
+          // Green solid line (Safe/Pull)
+          ctx.strokeStyle = "rgba(74, 222, 128, 0.6)";
+          ctx.setLineDash([]);
+        } else {
+          // Red dashed line (Danger/Push)
+          ctx.strokeStyle = "rgba(248, 113, 113, 0.6)";
+          ctx.setLineDash([10, 10]);
+        }
+
         ctx.stroke();
+        ctx.setLineDash([]); // Reset
       }
     });
 
@@ -378,7 +433,7 @@ export class PolarityGame extends SimulationBase {
       ctx.font = "16px sans-serif";
       ctx.textAlign = "left";
       ctx.fillText(
-        "Controls: Arrows to Move | Space to Switch Polarity",
+        "Controls: Arrows to Move | Space to Jump | Shift to Switch Polarity",
         20,
         30
       );
