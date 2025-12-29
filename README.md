@@ -1,73 +1,85 @@
-# React + TypeScript + Vite
+# Electromagnetism Sandbox ⚛️
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Electromagnetism Sandbox** is an interactive educational platform designed to make invisible physical forces visible and intuitive. It bridges the gap between abstract physics equations and tangible experience through real-time simulations and gamified learning.
 
-Currently, two official plugins are available:
+![Project Preview](public/preview.png)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🚀 Features
 
-## React Compiler
+The application features three distinct simulation modes, each focusing on a different aspect of physics:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 1. Electrostatics Lab ⚡
 
-## Expanding the ESLint configuration
+A free-form sandbox where users can experiment with electric charges.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Core Concept**: Coulomb's Law & Electric Fields.
+- **Math**:
+  - Calculates the net force on every particle using the **Superposition Principle**.
+  - **Coulomb's Law**: $F = k_e \frac{q_1 q_2}{r^2}$ determines the attraction/repulsion between charges.
+  - **Electric Field Visualization**: Computes the electric field vector $\vec{E}$ at grid points to render field lines and vector maps.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### 2. Signal Bouncer (Waves) 📡
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+A puzzle game where players guide a Wi-Fi signal to a target using mirrors.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **Core Concept**: Ray Optics & Reflection.
+- **Math**:
+  - **Ray Tracing**: Simulates the path of light/radio waves as rays.
+  - **Vector Reflection**: Calculates the bounce angle using the surface normal: $\vec{R} = \vec{D} - 2(\vec{D} \cdot \vec{N})\vec{N}$.
+  - **Intersection Testing**: Uses line-segment intersection algorithms to detect collisions with walls and mirrors.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 3. Polarity Parkour 🧲
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+An arcade platformer where the player controls a charged particle.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **Core Concept**: Dynamics & Magnetic Forces.
+- **Math**:
+  - **Newtonian Physics**: Implements gravity ($F=mg$), velocity, and acceleration using **Euler Integration**.
+  - **Electromagnetic Forces**: The player's movement is influenced by magnetic fields using an adapted inverse-square law ($F \propto \frac{1}{r^2}$).
+  - **Dynamic Polarity**: Switching polarity instantly inverts the force vectors (Attraction $\leftrightarrow$ Repulsion).
+
+## 🛠️ Tech Stack
+
+- **Frontend Framework**: [React](https://react.dev/) (v18)
+- **Styling**: [Tailwind CSS](https://tailwindcss.com/) - Custom "Organic Modern" design system.
+- **Build Tool**: [Vite](https://vitejs.dev/)
+- **Language**: JavaScript (ES6+)
+- **Rendering**: HTML5 Canvas API (2D Context)
+
+## 📦 Installation
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/FilipElznic/Electrostatics-Electromagnetic-Waves.git
+   cd Electrostatics-Electromagnetic-Waves
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Run the development server**
+
+   ```bash
+   npm run dev
+   ```
+
+4. **Build for production**
+   ```bash
+   npm run build
+   ```
+
+## 🎨 Design Philosophy
+
+The project moved away from a traditional "Sci-Fi/Hacker" aesthetic to a **"Human-Centric"** design.
+
+- **Palette**: Warm Zinc backgrounds with friendly Indigo and Rose accents.
+- **Typography**: Clean sans-serif fonts for better readability.
+- **UI**: Soft, rounded geometry (Pill shapes, Bento grids) to make physics feel accessible and safe, not intimidating.
+
+---
+
+_Created by Filip Elznic_
