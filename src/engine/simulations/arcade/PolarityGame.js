@@ -84,33 +84,50 @@ export class PolarityGame extends SimulationBase {
       grounded: false,
     };
 
-    // Level Design
+    // Level Design - Parkour to the Middle
+    const cx = this.width / 2;
+    const cy = this.height / 2;
+
     this.platforms = [
-      // Ground
-      { x: 0, y: this.height - 20, w: this.width, h: 20 },
-      // Steps
-      { x: 200, y: this.height - 150, w: 150, h: 20 },
-      { x: 500, y: this.height - 300, w: 150, h: 20 },
-      { x: 100, y: this.height - 450, w: 150, h: 20 },
-      // Goal Platform
-      { x: this.width - 200, y: 100, w: 200, h: 20 },
+      // Ground (Start)
+      { x: 0, y: this.height - 40, w: 300, h: 40 },
+
+      // Floating Islands leading up
+      { x: 350, y: this.height - 150, w: 100, h: 20 },
+      { x: 150, y: this.height - 300, w: 100, h: 20 },
+      { x: 400, y: this.height - 450, w: 120, h: 20 },
+
+      // The Gauntlet (Middle Section)
+      { x: cx - 200, y: cy + 100, w: 80, h: 20 },
+      { x: cx + 120, y: cy + 100, w: 80, h: 20 },
+
+      // Goal Platform (Top Middle)
+      { x: cx - 100, y: 150, w: 200, h: 30 },
     ];
 
     this.magnets = [
-      // Lift up from start
-      { pos: new Vector2(275, this.height - 250), q: -1, radius: 25 },
-      // Push across gap
-      { pos: new Vector2(425, this.height - 200), q: 1, radius: 25 },
-      // Pull to high platform
-      { pos: new Vector2(175, this.height - 550), q: 1, radius: 25 },
-      // Guarding the goal
-      { pos: new Vector2(this.width - 100, 250), q: -1, radius: 30 },
+      // 1. The Launcher (Push up)
+      { pos: new Vector2(200, this.height - 100), q: 1, radius: 30 },
+
+      // 2. The Swing (Pull to side)
+      { pos: new Vector2(50, this.height - 350), q: -1, radius: 25 },
+
+      // 3. The Bridge (Alternating fields)
+      { pos: new Vector2(300, this.height - 400), q: 1, radius: 25 },
+      { pos: new Vector2(cx, cy), q: -1, radius: 40 }, // Central Hub
+
+      // 4. The Climb (Vertical challenge)
+      { pos: new Vector2(cx - 150, cy - 100), q: 1, radius: 25 },
+      { pos: new Vector2(cx + 150, cy - 100), q: -1, radius: 25 },
+
+      // 5. Goal Keeper
+      { pos: new Vector2(cx, 80), q: 1, radius: 20 },
     ];
 
     this.goal = {
-      x: this.width - 150,
-      y: 40,
-      w: 100,
+      x: cx - 60,
+      y: 90,
+      w: 120,
       h: 60,
     };
   }
@@ -297,67 +314,97 @@ export class PolarityGame extends SimulationBase {
   }
 
   draw(ctx) {
-    // Background
-    ctx.fillStyle = "#0f172a";
+    // Background (Zinc-900)
+    ctx.fillStyle = "#18181b";
     ctx.fillRect(0, 0, this.width, this.height);
 
-    // Platforms
-    ctx.fillStyle = "#334155";
+    // Platforms (Zinc-700)
     this.platforms.forEach((p) => {
+      // Main body
+      ctx.fillStyle = "#3f3f46";
       ctx.fillRect(p.x, p.y, p.w, p.h);
-      // Highlight top
-      ctx.fillStyle = "#475569";
+
+      // Top Highlight (Zinc-600)
+      ctx.fillStyle = "#52525b";
       ctx.fillRect(p.x, p.y, p.w, 4);
-      ctx.fillStyle = "#334155";
+
+      // Subtle Border
+      ctx.strokeStyle = "#27272a";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(p.x, p.y, p.w, p.h);
     });
 
     // Goal
     const pulseOpacity = 0.3 + 0.2 * Math.sin(this.pulseTime * 5);
-    ctx.fillStyle = `rgba(255, 215, 0, ${pulseOpacity})`;
+
+    // Goal Glow
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "rgba(234, 179, 8, 0.5)";
+
+    ctx.fillStyle = `rgba(234, 179, 8, ${pulseOpacity})`; // Yellow-500
     ctx.fillRect(this.goal.x, this.goal.y, this.goal.w, this.goal.h);
-    ctx.strokeStyle = "gold";
+
+    ctx.strokeStyle = "#facc15"; // Yellow-400
     ctx.lineWidth = 2;
     ctx.strokeRect(this.goal.x, this.goal.y, this.goal.w, this.goal.h);
-    ctx.fillStyle = "gold";
-    ctx.font = "16px sans-serif";
-    ctx.fillText("GOAL", this.goal.x + 25, this.goal.y + 35);
+
+    ctx.shadowBlur = 0; // Reset shadow
+
+    ctx.fillStyle = "#fef08a"; // Yellow-200
+    ctx.font = "bold 16px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      "GOAL",
+      this.goal.x + this.goal.w / 2,
+      this.goal.y + this.goal.h / 2 + 6
+    );
 
     // Particles
     this.particles.forEach((p) => {
       ctx.fillStyle = p.color;
       ctx.globalAlpha = p.life;
-      ctx.fillRect(p.pos.x, p.pos.y, 8, 8);
+      ctx.beginPath();
+      ctx.arc(p.pos.x, p.pos.y, 4, 0, Math.PI * 2);
+      ctx.fill();
       ctx.globalAlpha = 1.0;
     });
 
     // Magnets
     this.magnets.forEach((m) => {
+      // Glow
+      ctx.shadowBlur = 15;
+      ctx.shadowColor =
+        m.q > 0 ? "rgba(244, 63, 94, 0.5)" : "rgba(99, 102, 241, 0.5)";
+
       ctx.beginPath();
       ctx.arc(m.pos.x, m.pos.y, m.radius, 0, Math.PI * 2);
-      ctx.fillStyle = m.q > 0 ? "#ef4444" : "#3b82f6";
+      ctx.fillStyle = m.q > 0 ? "#f43f5e" : "#6366f1"; // Rose-500 : Indigo-500
       ctx.fill();
+
+      ctx.shadowBlur = 0;
 
       // Field influence ring
       ctx.beginPath();
       ctx.arc(m.pos.x, m.pos.y, m.radius + 5, 0, Math.PI * 2);
       ctx.strokeStyle =
-        m.q > 0 ? "rgba(239, 68, 68, 0.3)" : "rgba(59, 130, 246, 0.3)";
+        m.q > 0 ? "rgba(244, 63, 94, 0.3)" : "rgba(99, 102, 241, 0.3)";
       ctx.lineWidth = 2;
       ctx.stroke();
 
+      // Symbol
       ctx.fillStyle = "white";
-      ctx.font = "20px sans-serif";
+      ctx.font = "bold 20px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(m.q > 0 ? "+" : "-", m.pos.x, m.pos.y);
+      ctx.fillText(m.q > 0 ? "+" : "-", m.pos.x, m.pos.y + 1);
     });
 
     // Player
-    const pColor = this.player.q > 0 ? "#ef4444" : "#3b82f6";
+    const pColor = this.player.q > 0 ? "#f43f5e" : "#6366f1"; // Rose-500 : Indigo-500
 
     // Glow Effect
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "white";
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = pColor;
 
     // Main Body
     ctx.beginPath();
@@ -381,9 +428,27 @@ export class PolarityGame extends SimulationBase {
     // Player Face
     ctx.fillStyle = "white";
     ctx.beginPath();
-    ctx.arc(this.player.pos.x - 5, this.player.pos.y - 2, 3, 0, Math.PI * 2); // Left Eye
-    ctx.arc(this.player.pos.x + 5, this.player.pos.y - 2, 3, 0, Math.PI * 2); // Right Eye
+    // Eyes
+    ctx.arc(this.player.pos.x - 5, this.player.pos.y - 2, 3, 0, Math.PI * 2);
+    ctx.arc(this.player.pos.x + 5, this.player.pos.y - 2, 3, 0, Math.PI * 2);
     ctx.fill();
+
+    // Smile/Mouth based on state
+    ctx.beginPath();
+    if (this.stuckToMagnet) {
+      // O face when stuck
+      ctx.arc(this.player.pos.x, this.player.pos.y + 6, 3, 0, Math.PI * 2);
+    } else {
+      // Smile
+      ctx.arc(
+        this.player.pos.x,
+        this.player.pos.y + 2,
+        8,
+        0.2 * Math.PI,
+        0.8 * Math.PI
+      );
+    }
+    ctx.stroke();
 
     // Force Tether Lines
     this.magnets.forEach((mag) => {
@@ -400,12 +465,12 @@ export class PolarityGame extends SimulationBase {
 
         ctx.lineWidth = thickness;
         if (isAttracting) {
-          // Green solid line (Safe/Pull)
-          ctx.strokeStyle = "rgba(74, 222, 128, 0.6)";
+          // Emerald-400 solid line (Safe/Pull)
+          ctx.strokeStyle = "rgba(52, 211, 153, 0.6)";
           ctx.setLineDash([]);
         } else {
-          // Red dashed line (Danger/Push)
-          ctx.strokeStyle = "rgba(248, 113, 113, 0.6)";
+          // Rose-400 dashed line (Danger/Push)
+          ctx.strokeStyle = "rgba(251, 113, 133, 0.6)";
           ctx.setLineDash([10, 10]);
         }
 
@@ -416,7 +481,7 @@ export class PolarityGame extends SimulationBase {
 
     // UI / HUD
     if (this.state === "won") {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      ctx.fillStyle = "rgba(24, 24, 27, 0.8)"; // Zinc-900 fade
       ctx.fillRect(0, 0, this.width, this.height);
       ctx.fillStyle = "white";
       ctx.font = "40px sans-serif";
@@ -427,15 +492,6 @@ export class PolarityGame extends SimulationBase {
         "Press 'R' to Restart",
         this.width / 2,
         this.height / 2 + 40
-      );
-    } else {
-      ctx.fillStyle = "white";
-      ctx.font = "16px sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(
-        "Controls: Arrows to Move | Space to Jump | Shift to Switch Polarity",
-        20,
-        30
       );
     }
   }

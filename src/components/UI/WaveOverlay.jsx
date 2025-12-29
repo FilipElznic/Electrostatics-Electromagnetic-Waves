@@ -22,18 +22,18 @@ export default function WaveOverlay({
     <>
       {/* Level Complete Modal */}
       {isLevelComplete && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-50 pointer-events-auto">
-          <div className="bg-slate-800 p-8 rounded-2xl border-2 border-green-500 shadow-2xl shadow-green-500/20 text-center max-w-md transform animate-bounce-in">
+        <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 pointer-events-auto">
+          <div className="bg-zinc-800 p-8 rounded-3xl border border-indigo-500/50 shadow-2xl shadow-indigo-500/20 text-center max-w-md transform animate-bounce-in">
             <div className="text-6xl mb-4">🎉</div>
-            <h2 className="text-3xl font-bold text-white mb-2">
+            <h2 className="text-3xl font-bold text-zinc-100 mb-2">
               Level Complete!
             </h2>
-            <p className="text-slate-300 mb-8">
+            <p className="text-zinc-400 mb-8">
               Target acquired. Signal strength at maximum capacity.
             </p>
             <button
               onClick={onNextLevel}
-              className="w-full py-4 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold text-lg transition-all transform hover:scale-105 shadow-lg"
+              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full font-bold text-lg transition-all transform hover:scale-105 shadow-lg shadow-indigo-500/20"
             >
               Next Level ➡️
             </button>
@@ -41,16 +41,49 @@ export default function WaveOverlay({
         </div>
       )}
 
-      <div className="absolute top-16 right-4 bg-slate-800/90 p-4 rounded-lg border border-slate-700 text-white w-64 backdrop-blur-sm pointer-events-auto">
-        <h3 className="font-bold mb-2 text-lg">Signal Bouncer</h3>
+      <div className="absolute top-6 right-6 bg-zinc-800 p-6 rounded-3xl border border-zinc-700 text-zinc-100 w-72 shadow-xl font-sans">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-rose-500/20 rounded-xl text-rose-400">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              className="w-6 h-6"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M8.288 15.038a5.25 5.25 0 0 1 7.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 0 1 1.06 0Z"
+              />
+            </svg>
+          </div>
+          <h3 className="font-bold text-lg text-zinc-100">Signal Bouncer</h3>
+        </div>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {/* Signal Strength Meter */}
+          <div className="bg-zinc-900/50 p-4 rounded-2xl border border-zinc-700/50">
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-zinc-400 font-medium">Signal Strength</span>
+              <span className="font-mono text-indigo-400 font-bold">
+                {Math.round(signalStrength)}%
+              </span>
+            </div>
+            <div className="w-full h-3 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700">
+              <div
+                className="h-full bg-gradient-to-r from-indigo-600 to-rose-500 transition-all duration-200"
+                style={{ width: `${signalStrength}%` }}
+              />
+            </div>
+          </div>
+
           {/* Tools */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Tools</label>
             <button
               onClick={onRotate}
-              className="w-full mt-2 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 rounded transition-colors text-xs font-bold flex items-center justify-center gap-2"
+              className="w-full py-3 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-xl transition-all hover:scale-105 active:scale-95 text-sm font-bold flex items-center justify-center gap-2 shadow-sm border border-zinc-600"
               title="Rotate drawing angle (R)"
             >
               <span>Rotate Mirror (R)</span>
@@ -58,7 +91,7 @@ export default function WaveOverlay({
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                strokeWidth={1.5}
+                strokeWidth={2}
                 stroke="currentColor"
                 className="w-4 h-4"
               >
@@ -71,52 +104,34 @@ export default function WaveOverlay({
             </button>
           </div>
 
-          {/* Signal Strength Meter */}
-          <div>
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-slate-400">Signal Strength</span>
-              <span className="font-mono text-green-400">
-                {Math.round(signalStrength)}%
-              </span>
-            </div>
-            <div className="w-full h-4 bg-slate-700 rounded-full overflow-hidden border border-slate-600">
-              <div
-                className="h-full bg-linear-to-r from-green-600 to-green-400 transition-all duration-200"
-                style={{ width: `${signalStrength}%` }}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              Source Frequency
-            </label>
-            <input
-              type="range"
-              min="0.05"
-              max="1"
-              step="0.01"
-              value={frequency}
-              onChange={(e) => onFrequencyChange(Number(e.target.value))}
-              className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-green-500"
-            />
-            <div className="flex justify-between text-xs mt-1 font-mono">
-              <span>Low</span>
-              <span className="text-green-400">{frequency.toFixed(2)}</span>
-              <span>High</span>
-            </div>
-          </div>
-
           <button
             onClick={onReset}
-            className="w-full py-2 bg-red-600/20 hover:bg-red-600/40 text-red-200 border border-red-900/50 rounded transition-colors text-sm font-bold"
+            className="w-full py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl transition-all hover:scale-105 active:scale-95 text-sm font-bold flex items-center justify-center gap-2"
           >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+              className="w-4 h-4"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 0 0-3.7-3.7 48.678 48.678 0 0 0-7.324 0 4.006 4.006 0 0 0-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 0 0 3.7 3.7 48.656 48.656 0 0 0 7.324 0 4.006 4.006 0 0 0 3.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3-3 3"
+              />
+            </svg>
             Reset Mirrors
           </button>
 
-          <div className="text-xs text-slate-500 italic border-t border-slate-700 pt-2 mt-2">
-            <p>Goal: Bounce the signal to the target.</p>
-            <p>Left Click: Place Mirror</p>
+          <div className="text-xs text-zinc-400 bg-zinc-900/50 p-4 rounded-2xl border border-zinc-700/50">
+            <p className="mb-2 font-bold text-rose-400">Mission Brief:</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>Bounce the signal to the target.</li>
+              <li>Left Click to place mirrors.</li>
+              <li>Avoid obstacles.</li>
+            </ul>
           </div>
         </div>
       </div>

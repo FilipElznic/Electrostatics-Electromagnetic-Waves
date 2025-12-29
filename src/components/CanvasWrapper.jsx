@@ -1,10 +1,11 @@
 import React, { useRef, useEffect } from "react";
 import { GameLoop } from "../engine/core/GameLoop";
-import { Electrostatics } from "../engine/simulations/lab/Electrostatics";
-import { WaveFDTD } from "../engine/simulations/lab/WaveFDTD";
-import { PolarityGame } from "../engine/simulations/arcade/PolarityGame";
 
-export default function CanvasWrapper({ simulationType, onInit }) {
+export default function CanvasWrapper({
+  simulationType,
+  onInit,
+  SimulationClass,
+}) {
   const canvasRef = useRef(null);
   const simulationRef = useRef(null); // Stores the pure JS class instance
 
@@ -17,37 +18,31 @@ export default function CanvasWrapper({ simulationType, onInit }) {
     canvas.height = window.innerHeight;
 
     // 1. Initialize the correct simulation based on props
-    if (simulationType === "electrostatics" || simulationType === "editor") {
-      simulationRef.current = new Electrostatics(
-        canvas.width,
-        canvas.height,
-        canvas
-      );
-    } else if (simulationType === "waves") {
-      simulationRef.current = new WaveFDTD(canvas.width, canvas.height, canvas);
-    } else if (simulationType === "arcade") {
-      simulationRef.current = new PolarityGame(
+    if (SimulationClass) {
+      simulationRef.current = new SimulationClass(
         canvas.width,
         canvas.height,
         canvas
       );
     }
 
-    if (onInit) {
+    if (onInit && simulationRef.current) {
       onInit(simulationRef.current);
     }
 
     // 2. Setup the Game Loop
     const loop = new GameLoop(
-      (dt) => simulationRef.current.update(dt),
+      (dt) => simulationRef.current?.update(dt),
       () => {
+        if (!simulationRef.current) return;
+
         // Clear screen with a fade effect for trails
         // Only do fade for electrostatics, Waves draws full screen image
         if (
           simulationType === "electrostatics" ||
           simulationType === "editor"
         ) {
-          ctx.fillStyle = "rgba(10, 10, 15, 0.2)";
+          ctx.fillStyle = "rgba(24, 24, 27, 0.2)"; // Zinc-900 with opacity for trails
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
@@ -81,7 +76,7 @@ export default function CanvasWrapper({ simulationType, onInit }) {
   return (
     <canvas
       ref={canvasRef}
-      className="block w-full h-full bg-slate-900"
+      className="block w-full h-full bg-zinc-900"
       onContextMenu={(e) => e.preventDefault()}
     />
   );
